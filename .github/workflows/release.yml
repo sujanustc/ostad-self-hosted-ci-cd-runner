@@ -40,8 +40,8 @@ jobs:
             fi
 
             # Install Node.js if missing
-            if ! command -v node >/dev/null 2>&1; then
-              echo "  Installing Node.js (v20) ..."
+            if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
+              echo "  Node.js or npm is missing — installing v20 ..."
               sudo apt-get update -qq
               sudo apt-get install -y ca-certificates curl gnupg
               sudo mkdir -p /etc/apt/keyrings
@@ -49,8 +49,9 @@ jobs:
               echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" | sudo tee /etc/apt/sources.list.d/nodesource.list
               sudo apt-get update -qq
               sudo apt-get install -y nodejs
+              hash -r
             else
-              echo "  Node.js is already installed ($(node -v))"
+              echo "  Node.js ($(node -v)) and npm ($(npm -v)) are already installed"
             fi
 
             echo "══════════════════════════════════════════"
