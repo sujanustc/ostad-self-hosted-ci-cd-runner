@@ -29,9 +29,34 @@ jobs:
             REPO_DIR=~/ostad-app
             
             echo "══════════════════════════════════════════"
+            echo "  Installing Prerequisites"
+            echo "══════════════════════════════════════════"
+
+            # Install Git if missing
+            if ! command -v git >/dev/null 2>&1; then
+              echo "  Installing Git ..."
+              sudo apt-get update -qq
+              sudo apt-get install -y git
+            fi
+
+            # Install Node.js if missing
+            if ! command -v node >/dev/null 2>&1; then
+              echo "  Installing Node.js (v20) ..."
+              sudo apt-get update -qq
+              sudo apt-get install -y ca-certificates curl gnupg
+              sudo mkdir -p /etc/apt/keyrings
+              curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | sudo gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
+              echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" | sudo tee /etc/apt/sources.list.d/nodesource.list
+              sudo apt-get update -qq
+              sudo apt-get install -y nodejs
+            else
+              echo "  Node.js is already installed ($(node -v))"
+            fi
+
+            echo "══════════════════════════════════════════"
             echo "  Updating Codebase"
             echo "══════════════════════════════════════════"
-            
+
             if [ -d "$REPO_DIR/.git" ]; then
               echo "  Repository exists – pulling latest changes"
               cd "$REPO_DIR"
