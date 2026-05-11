@@ -16,17 +16,17 @@ jobs:
           fetch-depth: 0
 
       - name: Deploy to remote server via SSH
-        uses: appleboy/ssh-action@v0.1.6
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          # SSH private key stored as a secret
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          # Optional: pass known hosts if needed
-          # known_hosts: ${{ secrets.SSH_KNOWN_HOSTS }}
-          script: |
+        run: |
+          # Create .ssh directory and save the private key
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/release_key
+          chmod 600 ~/.ssh/release_key
+          
+          # Execute commands on remote server
+          ssh -i ~/.ssh/release_key -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
             set -e
             REPO_DIR=~/ostad-app
+            
             # Clone if the repository does not exist, otherwise pull latest
             if [ -d "$REPO_DIR/.git" ]; then
               echo "Repository exists – pulling latest changes"
@@ -59,7 +59,7 @@ jobs:
             # Create a basic Nginx site config if it doesn't exist
             if [ ! -f /etc/nginx/sites-available/ostad ]; then
               echo "Creating Nginx site configuration"
-              sudo bash -c 'cat > /etc/nginx/sites-available/ostad <<EOF
+              sudo bash -c 'cat > /etc/nginx/sites-available/ostad <<SITE_EOF
             server {
                 listen 80 default_server;
                 server_name _;
@@ -69,9 +69,13 @@ jobs:
                     try_files \$uri \$uri/ /index.html;
                 }
             }
-            EOF'
+SITE_EOF'
               sudo ln -s /etc/nginx/sites-available/ostad /etc/nginx/sites-enabled/ostad
             fi
 
             echo "Testing Nginx configuration and reloading"
             sudo nginx -t && sudo systemctl restart nginx
+          EOF
+
+          # Clean up the private key
+          rm ~/.ssh/release_key
