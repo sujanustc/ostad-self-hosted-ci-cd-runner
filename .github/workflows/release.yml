@@ -59,17 +59,15 @@ jobs:
             # Create a basic Nginx site config if it doesn't exist
             if [ ! -f /etc/nginx/sites-available/ostad ]; then
               echo "Creating Nginx site configuration"
-              sudo bash -c 'cat > /etc/nginx/sites-available/ostad <<SITE_EOF
-            server {
-                listen 80 default_server;
-                server_name _;
-                root /var/www/html;
-                index index.html;
-                location / {
-                    try_files \$uri \$uri/ /index.html;
-                }
-            }
-SITE_EOF'
+              printf "server {
+    listen 80 default_server;
+    server_name _;
+    root /var/www/html;
+    index index.html;
+    location / {
+        try_files \$uri \$uri/ /index.html;
+    }
+}\n" | sudo tee /etc/nginx/sites-available/ostad > /dev/null
               sudo ln -s /etc/nginx/sites-available/ostad /etc/nginx/sites-enabled/ostad
             fi
 
