@@ -10,70 +10,109 @@ jobs:
     if: contains(github.event.head_commit.message, 'RELEASE')
     runs-on: self-hosted
     steps:
-      - name: Checkout repository (optional, ensures actions have repo context)
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Deploy to remote server via SSH
+      - name: Setup SSH Key
         run: |
-          # Create .ssh directory and save the private key
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/release_key
           chmod 600 ~/.ssh/release_key
-          
-          # Execute commands on remote server
-          ssh -i ~/.ssh/release_key -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
-            set -e
+          ssh-keyscan -H "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Deploy to Remote Server
+        run: |
+          ssh -i ~/.ssh/release_key "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" << 'ENDSSH'
+            set -euo pipefail
             REPO_DIR=~/ostad-app
             
-            # Clone if the repository does not exist, otherwise pull latest
+            echo "══════════════════════════════════════════"
+            echo "  Updating Codebase"
+            echo "══════════════════════════════════════════"
+            
             if [ -d "$REPO_DIR/.git" ]; then
-              echo "Repository exists – pulling latest changes"
-              cd $REPO_DIR
+              echo "  Repository exists – pulling latest changes"
+              cd "$REPO_DIR"
               git fetch origin
               git checkout development
               git pull origin development
             else
-              echo "Cloning repository"
-              git clone https://github.com/${{ github.repository }} $REPO_DIR
-              cd $REPO_DIR
+              echo "  Cloning repository ..."
+              git clone "https://github.com/${{ github.repository }}" "$REPO_DIR"
+              cd "$REPO_DIR"
             fi
 
-            echo "Installing Node dependencies"
+            echo "  Installing Node dependencies ..."
             npm ci
 
-            echo "Building the React app"
+            echo "  Building the React app ..."
             npm run build
 
-            echo "Ensuring Nginx is installed"
+            echo "══════════════════════════════════════════"
+            echo "  Configuring Server"
+            echo "══════════════════════════════════════════"
+
             if ! command -v nginx >/dev/null 2>&1; then
-              sudo apt-get update
-              sudo apt-get install -y nginx
+              echo "  Installing Nginx ..."
+              sudo apt-get update -qq
+              sudo DEBIAN_FRONTEND=noninteractive apt-get install -y nginx
+            else
+              echo "  Nginx is already installed"
             fi
 
-            echo "Deploying build artifacts to /var/www/html"
+            echo "  Deploying build artifacts to /var/www/html ..."
             sudo rm -rf /var/www/html/*
             sudo cp -r dist/* /var/www/html/
 
-            # Create a basic Nginx site config if it doesn't exist
             if [ ! -f /etc/nginx/sites-available/ostad ]; then
-              echo "Creating Nginx site configuration"
+              echo "  Creating Nginx site configuration ..."
               printf "server {
-    listen 80 default_server;
-    server_name _;
-    root /var/www/html;
-    index index.html;
-    location / {
-        try_files \$uri \$uri/ /index.html;
-    }
-}\n" | sudo tee /etc/nginx/sites-available/ostad > /dev/null
+                listen 80 default_server;
+                server_name _;
+                root /var/www/html;
+                index index.html;
+                location / {
+                    try_files \$uri \$uri/ /index.html;
+                }
+              }\n" | sudo tee /etc/nginx/sites-available/ostad > /dev/null
               sudo ln -s /etc/nginx/sites-available/ostad /etc/nginx/sites-enabled/ostad
             fi
 
-            echo "Testing Nginx configuration and reloading"
+            echo "  Testing and restarting Nginx ..."
             sudo nginx -t && sudo systemctl restart nginx
-          EOF
+            
+            echo "══════════════════════════════════════════"
+            echo "  Remote Script Complete"
+            echo "══════════════════════════════════════════"
+          ENDSSH
 
-          # Clean up the private key
-          rm ~/.ssh/release_key
+      - name: Health Check
+        run: |
+          echo "Checking application health at http://${{ secrets.SSH_HOST }}"
+          sleep 5
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "http://${{ secrets.SSH_HOST }}" || echo "000")
+          echo "HTTP Status: $HTTP_STATUS"
+          if [ "$HTTP_STATUS" = "200" ]; then
+            echo "PASS - Application is online"
+          else
+            echo "FAIL - Received $HTTP_STATUS"
+            exit 1
+          fi
+
+      - name: Deployment Summary
+        if: success()
+        run: |
+          echo "══════════════════════════════════════════"
+          echo "  DEPLOYMENT SUCCESSFUL"
+          echo "  URL: http://${{ secrets.SSH_HOST }}"
+          echo "  Branch: ${{ github.ref_name }}"
+          echo "  Actor: ${{ github.actor }}"
+          echo "══════════════════════════════════════════"
+
+      - name: Cleanup SSH Key
+        if: always()
+        run: |
+          rm -f ~/.ssh/release_key
+          echo "SSH key removed from runner disk."
