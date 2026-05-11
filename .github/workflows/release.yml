@@ -1,0 +1,77 @@
+name: React Release Deployment
+
+on:
+  push:
+    branches: [development]
+    # Trigger for any push; further filter using commit message condition in job
+
+jobs:
+  deploy:
+    if: contains(github.event.head_commit.message, 'RELEASE')
+    runs-on: self-hosted
+    steps:
+      - name: Checkout repository (optional, ensures actions have repo context)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Deploy to remote server via SSH
+        uses: appleboy/ssh-action@v0.1.6
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          # SSH private key stored as a secret
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          # Optional: pass known hosts if needed
+          # known_hosts: ${{ secrets.SSH_KNOWN_HOSTS }}
+          script: |
+            set -e
+            REPO_DIR=~/ostad-app
+            # Clone if the repository does not exist, otherwise pull latest
+            if [ -d "$REPO_DIR/.git" ]; then
+              echo "Repository exists – pulling latest changes"
+              cd $REPO_DIR
+              git fetch origin
+              git checkout development
+              git pull origin development
+            else
+              echo "Cloning repository"
+              git clone https://github.com/${{ github.repository }} $REPO_DIR
+              cd $REPO_DIR
+            fi
+
+            echo "Installing Node dependencies"
+            npm ci
+
+            echo "Building the React app"
+            npm run build
+
+            echo "Ensuring Nginx is installed"
+            if ! command -v nginx >/dev/null 2>&1; then
+              sudo apt-get update
+              sudo apt-get install -y nginx
+            fi
+
+            echo "Deploying build artifacts to /var/www/html"
+            sudo rm -rf /var/www/html/*
+            sudo cp -r dist/* /var/www/html/
+
+            # Create a basic Nginx site config if it doesn't exist
+            if [ ! -f /etc/nginx/sites-available/ostad ]; then
+              echo "Creating Nginx site configuration"
+              sudo bash -c 'cat > /etc/nginx/sites-available/ostad <<EOF
+server {
+    listen 80 default_server;
+    server_name _;
+    root /var/www/html;
+    index index.html;
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
+EOF'
+              sudo ln -s /etc/nginx/sites-available/ostad /etc/nginx/sites-enabled/ostad
+            fi
+
+            echo "Testing Nginx configuration and reloading"
+            sudo nginx -t && sudo systemctl restart nginx
