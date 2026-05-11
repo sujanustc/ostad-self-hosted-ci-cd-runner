@@ -60,16 +60,16 @@ jobs:
             if [ ! -f /etc/nginx/sites-available/ostad ]; then
               echo "Creating Nginx site configuration"
               sudo bash -c 'cat > /etc/nginx/sites-available/ostad <<EOF
-server {
-    listen 80 default_server;
-    server_name _;
-    root /var/www/html;
-    index index.html;
-    location / {
-        try_files $uri $uri/ /index.html;
-    }
-}
-EOF'
+            server {
+                listen 80 default_server;
+                server_name _;
+                root /var/www/html;
+                index index.html;
+                location / {
+                    try_files \$uri \$uri/ /index.html;
+                }
+            }
+            EOF'
               sudo ln -s /etc/nginx/sites-available/ostad /etc/nginx/sites-enabled/ostad
             fi
 
